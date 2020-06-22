@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="什么是主从复制概述在分布式系统中为了解决单点问题，通常会把数据复制多个副本部署到其他机器，满足故障恢复和负载均衡等需求。Redis也是如此，它为我们提供了复制功能，实现了相同数据的多个Redis副本。复制功能是实现高可用Redis的基础。 作用 数据冗余：主从复制实现了数据的热备份，是持久化之外的一种数据冗余方式 故障恢复：当主服务器出现问题时，可由从服务器提供服务，实现快速的故障恢复，实际上是一">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis主从复制">
+<meta property="og:url" content="https://wolfchenxing.github.io/2020/05/08/Redis/Redis主从复制/index.html">
+<meta property="og:site_name" content="小小卖油翁">
+<meta property="og:description" content="什么是主从复制概述在分布式系统中为了解决单点问题，通常会把数据复制多个副本部署到其他机器，满足故障恢复和负载均衡等需求。Redis也是如此，它为我们提供了复制功能，实现了相同数据的多个Redis副本。复制功能是实现高可用Redis的基础。 作用 数据冗余：主从复制实现了数据的热备份，是持久化之外的一种数据冗余方式 故障恢复：当主服务器出现问题时，可由从服务器提供服务，实现快速的故障恢复，实际上是一">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/全量复制流程图.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/部分复制流程图.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/命令传播阶段.jpg">
+<meta property="og:updated_time" content="2020-06-22T01:56:13.133Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis主从复制">
+<meta name="twitter:description" content="什么是主从复制概述在分布式系统中为了解决单点问题，通常会把数据复制多个副本部署到其他机器，满足故障恢复和负载均衡等需求。Redis也是如此，它为我们提供了复制功能，实现了相同数据的多个Redis副本。复制功能是实现高可用Redis的基础。 作用 数据冗余：主从复制实现了数据的热备份，是持久化之外的一种数据冗余方式 故障恢复：当主服务器出现问题时，可由从服务器提供服务，实现快速的故障恢复，实际上是一">
+<meta name="twitter:image" content="https://wolfchenxing.github.io/images/Redis/全量复制流程图.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://wolfchenxing.github.io/2020/05/08/Redis/Redis主从复制/">
+
+
+
+
+
+  <title>Redis主从复制 | 小小卖油翁</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">小小卖油翁</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br>
+            
+            关于
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br>
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://wolfchenxing.github.io/2020/05/08/Redis/Redis主从复制/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Yuting">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="小小卖油翁">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis主从复制</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2020-05-08T21:03:15+08:00">
+                2020-05-08
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Redis/" itemprop="url" rel="index">
+                    <span itemprop="name">Redis</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+            <div class="post-wordcount">
+              
+                
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-file-word-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">字数统计&#58;</span>
+                
+                <span title="字数统计">
+                  3.6k
+                </span>
+              
+
+              
+                <span class="post-meta-divider">|</span>
+              
+
+              
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-clock-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
+                
+                <span title="阅读时长">
+                  12
+                </span>
+              
+            </div>
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="什么是主从复制"><a href="#什么是主从复制" class="headerlink" title="什么是主从复制"></a>什么是主从复制</h1><h2 id="概述"><a href="#概述" class="headerlink" title="概述"></a>概述</h2><p>在分布式系统中为了解决单点问题，通常会把数据复制多个副本部署到其他机器，满足故障恢复和负载均衡等需求。Redis也是如此，它为我们提供了复制功能，实现了相同数据的多个Redis副本。复制功能是实现<strong>高可用</strong>Redis的基础。</p>
+<h2 id="作用"><a href="#作用" class="headerlink" title="作用"></a>作用</h2><ul>
+<li>数据冗余：主从复制实现了数据的热备份，是持久化之外的一种数据冗余方式</li>
+<li>故障恢复：当主服务器出现问题时，可由从服务器提供服务，实现快速的故障恢复，实际上是一种服务的冗余</li>
+<li>负载均衡：在主从复制的基础上，配合读写分离，可以由主服务器提供写服务，从服务器提供读服务，分担服务器负载；尤其在写少读多的场景，通过多个从服务器分担读负载，可大大提高Redis服务器的并发量</li>
+<li>高可用基石：主从复制还是哨兵和集群能够实施的基础，因此主从复制是Redis高可用的基础</li>
+</ul>
+<h2 id="拓扑结构"><a href="#拓扑结构" class="headerlink" title="拓扑结构"></a>拓扑结构</h2><h3 id="一对一"><a href="#一对一" class="headerlink" title="一对一"></a>一对一</h3><p>主从一对一，适用于故障转移。</p>
+<h3 id="星形结构"><a href="#星形结构" class="headerlink" title="星形结构"></a>星形结构</h3><p>适用于读多写少的场景，可以把读命令发送到从节点来分担主节点压力。如：keys命令，可以在其中一台从节点上执行，防止慢查询对主节点造成阻塞从而影响线上服务的稳定性。</p>
+<p>面对写多读少的场景，多个从节点会导致主节点写命令的多次发送从而过度消耗网络带宽，同时也加重了主节点的负载影响服务稳定性。</p>
+<h3 id="树状结构"><a href="#树状结构" class="headerlink" title="树状结构"></a>树状结构</h3><p>从节点不但可以复制主节点数据，同时可以作为其他从节点的主节点继续向下层复制。通过这种结构可以有效降低主节点负载和需要传送给从节点的数据量。</p>
+<h1 id="主从复制原理"><a href="#主从复制原理" class="headerlink" title="主从复制原理"></a>主从复制原理</h1><h2 id="复制过程"><a href="#复制过程" class="headerlink" title="复制过程"></a>复制过程</h2><ol>
+<li>从节点保存主节点（master）信息。</li>
+<li>从节点（slave）内部通过每秒运行的定时任务维护复制相关逻辑，当定时任务发现存在新的主节点后，会尝试与该节点建立网络连接。<br>如果从节点无法建立连接，定时任务会无限重试直到连接成功或者执行slaveof no one取消复制。</li>
+<li>发送ping命令，检测主从之间网络套接字是否可用和主节点当前是否可接受处理命令。返回pong则继续复制流程，否则断开连接。</li>
+<li>权限验证。如果主节点设置了requirepass参数，则需要密码验证，从节点必须配置masterauth参数保证与主节点相同的密码才能通过验证；如果验证失败复制将终止，从节点重新断开重连。</li>
+<li>连接成功，发送从节点的ip与port给主节点。</li>
+<li><strong>数据同步</strong>。从服务向主服务器发送psync命令开始同步，可以分为全量复制和部分复制。</li>
+<li><strong>命令传播</strong>，当主节点把当前的数据同步给从节点后，便完成了复制的建立流程。接下来主节点会持续地把写命令发送给从节点，保证主从数据一致性。</li>
+</ol>
+<h2 id="数据同步"><a href="#数据同步" class="headerlink" title="数据同步"></a>数据同步</h2><h3 id="全量复制"><a href="#全量复制" class="headerlink" title="全量复制"></a>全量复制</h3><p>psync ? -1命令发起全量复制请求，一般用于初次复制场景，这时master服务器会将自己的rdb文件发送给slave服务器进行数据同步，并记录同步期间的其他写入，再发送给slave服务器，以达到完全同步的目的。</p>
+<p><img src="/images/Redis/全量复制流程图.jpg" alt="全量复制流程图"></p>
+<p>RDB文件从创建到传输完毕消耗的总时间超过repl-timeout所配置的值（默认60秒），从节点将放弃接受RDB文件并清理已经下载的临时文件，导致全量复制失败，数据量较大的节点容易出现主从数据同步超时，需要响应的调整repl-timeout的值。</p>
+<p>Redis支持无盘复制，生成的RDB文件不保存到硬盘而是直接通过网络发送给从节点，通过repl-diskless-sync参数控制，默认关闭。</p>
+<p>client buffer是在server端实现的一个读取缓冲区。redis server在接收到客户端的请求后，把响应结果写入到client buffer中，而不是直接发送给客户端。</p>
+<p>client-output-buffer-limit slave 256MB 64MB 60，表示主节点输出给从节点的缓存(output-buffer)大小，从库的复制客户端如果60秒内缓冲区消耗持续大于64MB或者直接超过256MB时，主节点将直接关闭复制客户端连接。</p>
+<p>如果主节点创建和传输RDB的时间过长，对于高流量写入场景非常容易造成主节点复制客户端缓冲区溢出。</p>
+<h3 id="部分复制"><a href="#部分复制" class="headerlink" title="部分复制"></a>部分复制</h3><p>psync  <runid> <offset>命令发起部分复制请求，用于处理在主从复制中因网络闪断等原因造成的数据丢失场景，当从节点再次连上主节点后，如果条件允许，主节点会补发丢失数据给从节点。因为补发的数据远远小于全量数据，可以有效避免全量复制的过高开销。</offset></runid></p>
+<p><img src="/images/Redis/部分复制流程图.jpg" alt="部分复制流程图"></p>
+<ol>
+<li>当主从节点之间网络出现中断时，如果超过repl-timeout时间，主节点会认为从节点故障并中断复制连接。</li>
+<li>主从连接中断期间主节点依然响应命令并且保存在主节点的复制积压缓冲区中，但因复制连接中断命令无法发送给从节点。</li>
+<li>当主从节点网络恢复后，从节点会再次连上主节点。</li>
+<li>当主从连接恢复后，由于从节点之前保存了自身已复制的偏移量和主节点的运行ID。因此会把它们当作psync参数发送给主节点，要求进行部分复制操作。</li>
+<li>主节点接到psync命令后首先核对参数runId是否与自身一致，如果一致，说明之前复制的是当前主节点；之后根据参数offset在自身复制积压缓冲区查找，如果偏移量之后的数据存在缓冲区中，则对从节点发送+CONTINUE响应，表示可以进行部分复制。</li>
+<li>主节点根据偏移量把复制积压缓冲区里的数据发送给从节点，保证主从复制进入正常状态。</li>
+</ol>
+<p><strong>构成部分复制的三要素</strong>：复制偏移量、复制积压缓冲区、服务器运行ID</p>
+<h4 id="复制偏移量"><a href="#复制偏移量" class="headerlink" title="复制偏移量"></a>复制偏移量</h4><p>参与复制的主从节点都会维护自身复制偏移量。主节点（master）在处理完写入命令后，会把命令的字节长度做累加记录。从节点（slave）每秒钟上报自身的复制偏移量给主节点，因此主节点也会保存从节点的复制偏移量。可以通过主节点的master_repl_offset信息，判断主从节点复制相差的数据量，根据这个差值判定当前复制的健康度。</p>
+<h4 id="复制积压缓冲区"><a href="#复制积压缓冲区" class="headerlink" title="复制积压缓冲区"></a>复制积压缓冲区</h4><p>复制积压缓冲区是一个固定长度的FIFO，默认1M，当主节点有连接的从节点（slave）时被创建，这时主节点（master）响应写命令时，不但会把命令发送给从节点，还会写入复制积压缓冲区。</p>
+<blockquote>
+<p>正确的估算和设置复制积压缓冲区的大小，可以避免主服务器执行全量复制；<br>复制积压缓冲区大小=second(服务断开重连时间)*write_size_per_second(每秒写入数据量)</p>
+</blockquote>
+<h4 id="服务器运行ID"><a href="#服务器运行ID" class="headerlink" title="服务器运行ID"></a>服务器运行ID</h4><p>主节点根据runid判断能否进行部分复制：</p>
+<p>如果从服务器保存的runid与主服务器现在的runid相同，说明主从服务器之前同步过，主服务器会继续尝试使用部分复制(到底能不能部分复制还要看offset和复制积压缓冲区的情况)；</p>
+<p>如果从服务器保存的runid与主服务器现在的runid不同，说明从节点在断线前同步的Redis节点并不是当前的主服务器，只能进行全量复制。</p>
+<h2 id="命令传播"><a href="#命令传播" class="headerlink" title="命令传播"></a>命令传播</h2><p>在命令传播阶段，除了发送写命令，主从服务器还维持着心跳机制：PING和REPLCONF ACK</p>
+<p><img src="/images/Redis/命令传播阶段.jpg" alt="命令传播阶段"></p>
+<p>1）主节点默认每隔10秒对从节点发送ping命令，判断从节点的存活性和连接状态。可通过参数repl-ping-slave-period控制发送频率。<br>2）从节点在主线程中每隔1秒发送replconf ack {offset}命令，给主节点上报自身当前的复制偏移量。</p>
+<p>replconf命令主要作用如下：</p>
+<ul>
+<li>实时监测主从节点网络状态。</li>
+<li>上报自身复制偏移量，检查复制数据是否丢失，如果从节点数据丢失，再从主节点的复制缓冲区中拉取丢失数据。</li>
+<li>实现保证从节点的数量和延迟性功能，通过min-slaves-to-write、min-slaves-max-lag参数配置定义。</li>
+</ul>
+<h1 id="操作与配置"><a href="#操作与配置" class="headerlink" title="操作与配置"></a>操作与配置</h1><h2 id="建立复制"><a href="#建立复制" class="headerlink" title="建立复制"></a>建立复制</h2><p>slaveof本身是异步命令，执行slaveof命令时，节点只保存主节点信息后返回，后续复制流程<br>在节点内部异步执行。</p>
+<p>方式一：在配置文件中加入 slaveof <masterip> <masterport>，随Redis启动生效<br>方式二：直接使用命令 slaveof <masterip> <masterport>生效</masterport></masterip></masterport></masterip></p>
+<blockquote>
+<p>用info replication命令查看复制相关信息</p>
+</blockquote>
+<h2 id="关闭复制"><a href="#关闭复制" class="headerlink" title="关闭复制"></a>关闭复制</h2><p>在从节点执行slaveof no one来断开与主节点复制关系。</p>
+<p>关闭复制主要流程：<br>1）关闭与主节点复制关系。<br>2）从节点晋升为主节点。</p>
+<p>切换主节点操作流程如下：<br>1）关闭与旧主节点复制关系。<br>2）与新主节点建立复制关系。<br>3）删除从节点当前所有数据。<br>4）对新主节点进行复制操作。</p>
+<p>切换主节点后从节点会清空之前所有的数据，但是如果是从节点关闭与主节点的复制关系时不会清空当前节点上的数据。</p>
+<h2 id="安全性设置"><a href="#安全性设置" class="headerlink" title="安全性设置"></a>安全性设置</h2><p>为了提升安全性，可以为主节点设置requirepass参数进行密码验证，这时所有的客户端访问必须使用auth命令实行校验，配置从节点的masterauth参数与主节点密码保持一致，这样从节点才可以正确地连接到主节点并发起复制流程。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">// 主节点设置密码</span><br><span class="line">config set requirepass 123456</span><br><span class="line">// 从节点配置主节点密码</span><br><span class="line">config set materauth 123456</span><br></pre></td></tr></table></figure>
+<h2 id="只读"><a href="#只读" class="headerlink" title="只读"></a>只读</h2><p>由于复制模式是单向的，从节点接收写命令的话无法让主节点感知到，这会造成数据不一致，因此从节点使用slave-read-only=yes配置为只读模式。</p>
+<h2 id="数据传输延迟"><a href="#数据传输延迟" class="headerlink" title="数据传输延迟"></a>数据传输延迟</h2><p>repl-disable-tcp-nodelay参数用于控制是否关闭TCP_NODELAY，默认关闭。</p>
+<ul>
+<li><p>当关闭时，主节点产生的命令数据无论大小都会及时地发送给从节点，这样主从之间延迟会变小，但增加了网络带宽的消耗。适用于主从之间的网络环境良好的场景，如同机架或同机房部署。</p>
+</li>
+<li><p>当开启时，主节点会合并较小的TCP数据包从而节省带宽。默认发送时间间隔取决于Linux的内核，一般默认为40毫秒。这种配置节省了带宽但增大主从之间的延迟。适用于主从网络环境复杂或带宽紧张的场景，如跨机房部署。</p>
+</li>
+</ul>
+<h1 id="常见问题"><a href="#常见问题" class="headerlink" title="常见问题"></a>常见问题</h1><h2 id="数据延迟与不一致"><a href="#数据延迟与不一致" class="headerlink" title="数据延迟与不一致"></a>数据延迟与不一致</h2><p>a、优化主从节点之间的网络环境（如在同机房部署）；<br>b、监控主从节点延迟（通过offset）判断，如果从节点延迟过大，通知应用不再通过该从节点读取数据；<br>c、Redis复制提供了slave-serve-stale-data参数，默认开启状态。如果开启则从节点依然响应所有命令。对于无法容忍不一致的应用场景可以设置no来关闭命令执行，此时从节点除了info和slaveof命令之外所有的命令只返回“SYNC with master in progress”信息。</p>
+<h2 id="数据过期问题"><a href="#数据过期问题" class="headerlink" title="数据过期问题"></a>数据过期问题</h2><p>在主从复制场景下，为了主从节点的数据一致性，从节点不会主动删除数据，而是由主节点控制从节点中过期数据的删除。由于主节点的惰性删除和定期删除策略，都不能保证主节点及时对过期数据执行删除操作，很容易读取到已经过期的数据。Redis 3.2中，从节点在读取数据时，增加了对数据是否过期的判断：如果该数据已过期，则不返回给客户端；将Redis升级到3.2可以解决数据过期问题。</p>
+<h2 id="故障转移"><a href="#故障转移" class="headerlink" title="故障转移"></a>故障转移</h2><p>当主节点或从节点出现问题而发生更改时，需要及时修改应用程序读写Redis数据的连接；连接的切换可以手动进行，或者自己写监控程序进行切换，但前者响应慢、容易出错，后者实现复杂，成本都不算低。可以使用哨兵机制实现自动故障转移。</p>
+<h2 id="复制超时"><a href="#复制超时" class="headerlink" title="复制超时"></a>复制超时</h2><p>注意Redis单机数据量不要过大，另一方面就是适当增大repl-timeout值，具体的大小可以根据bgsave耗时来调整。<br>主节点会向从节点发送PING命令，频率由repl-ping-slave-period控制；该参数应明显小于repl-timeout值(后者至少是前者的几倍)。否则，如果两个参数相等或接近，网络抖动导致个别PING命令丢失，此时恰巧主节点也没有向从节点发送数据，则从节点很容易判断超时。</p>
+<h2 id="输出缓冲区溢出"><a href="#输出缓冲区溢出" class="headerlink" title="输出缓冲区溢出"></a>输出缓冲区溢出</h2><p>通过client-output-buffer-limit调整输出缓冲区的大小避免复制失败</p>
+<h2 id="安全重启"><a href="#安全重启" class="headerlink" title="安全重启"></a>安全重启</h2><p>如内存碎片过高需要重启主服务器，应使用debug reload避免runid与offset改变而执行全量复制。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/04/27/Redis/Redis持久化/" rel="next" title="Redis持久化">
+                <i class="fa fa-chevron-left"></i> Redis持久化
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2020/05/10/Redis/Redis实用技巧/" rel="prev" title="Redis实用技巧">
+                Redis实用技巧 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image" src="/images/avatar.jpg" alt="Yuting">
+            
+              <p class="site-author-name" itemprop="name">Yuting</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#什么是主从复制"><span class="nav-number">1.</span> <span class="nav-text">什么是主从复制</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#概述"><span class="nav-number">1.1.</span> <span class="nav-text">概述</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#作用"><span class="nav-number">1.2.</span> <span class="nav-text">作用</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#拓扑结构"><span class="nav-number">1.3.</span> <span class="nav-text">拓扑结构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#一对一"><span class="nav-number">1.3.1.</span> <span class="nav-text">一对一</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#星形结构"><span class="nav-number">1.3.2.</span> <span class="nav-text">星形结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#树状结构"><span class="nav-number">1.3.3.</span> <span class="nav-text">树状结构</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#主从复制原理"><span class="nav-number">2.</span> <span class="nav-text">主从复制原理</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#复制过程"><span class="nav-number">2.1.</span> <span class="nav-text">复制过程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据同步"><span class="nav-number">2.2.</span> <span class="nav-text">数据同步</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#全量复制"><span class="nav-number">2.2.1.</span> <span class="nav-text">全量复制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#部分复制"><span class="nav-number">2.2.2.</span> <span class="nav-text">部分复制</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#复制偏移量"><span class="nav-number">2.2.2.1.</span> <span class="nav-text">复制偏移量</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#复制积压缓冲区"><span class="nav-number">2.2.2.2.</span> <span class="nav-text">复制积压缓冲区</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#服务器运行ID"><span class="nav-number">2.2.2.3.</span> <span class="nav-text">服务器运行ID</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#命令传播"><span class="nav-number">2.3.</span> <span class="nav-text">命令传播</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#操作与配置"><span class="nav-number">3.</span> <span class="nav-text">操作与配置</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#建立复制"><span class="nav-number">3.1.</span> <span class="nav-text">建立复制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#关闭复制"><span class="nav-number">3.2.</span> <span class="nav-text">关闭复制</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#安全性设置"><span class="nav-number">3.3.</span> <span class="nav-text">安全性设置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#只读"><span class="nav-number">3.4.</span> <span class="nav-text">只读</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据传输延迟"><span class="nav-number">3.5.</span> <span class="nav-text">数据传输延迟</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#常见问题"><span class="nav-number">4.</span> <span class="nav-text">常见问题</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#数据延迟与不一致"><span class="nav-number">4.1.</span> <span class="nav-text">数据延迟与不一致</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#数据过期问题"><span class="nav-number">4.2.</span> <span class="nav-text">数据过期问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#故障转移"><span class="nav-number">4.3.</span> <span class="nav-text">故障转移</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#复制超时"><span class="nav-number">4.4.</span> <span class="nav-text">复制超时</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#输出缓冲区溢出"><span class="nav-number">4.5.</span> <span class="nav-text">输出缓冲区溢出</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#安全重启"><span class="nav-number">4.6.</span> <span class="nav-text">安全重启</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Yuting</span>
+
+  
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+    
+      <span class="post-meta-item-text">Site words total count&#58;</span>
+    
+    <span title="Site words total count">20.7k</span>
+  
+</div>
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>

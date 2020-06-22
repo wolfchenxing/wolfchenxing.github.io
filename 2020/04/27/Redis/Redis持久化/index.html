@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="RDB持久化触发方式手动触发 save：阻塞式，内存较大的实例在执行过程中会造成长时间的阻塞，影响主进程上的正常服务请求 bgsave：fork子进程，RDB持久化的过程在子进程中进行，完成后自动结束进程。阻塞发生在fork阶段，时间较短。  自动触发满足RDB持久化条件后会自动执行持久化过程。 触发条件  使用save相关配置 配置格式：save   表示秒内数据集存在次修改时，自动触发bgsa">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis持久化">
+<meta property="og:url" content="https://wolfchenxing.github.io/2020/04/27/Redis/Redis持久化/index.html">
+<meta property="og:site_name" content="小小卖油翁">
+<meta property="og:description" content="RDB持久化触发方式手动触发 save：阻塞式，内存较大的实例在执行过程中会造成长时间的阻塞，影响主进程上的正常服务请求 bgsave：fork子进程，RDB持久化的过程在子进程中进行，完成后自动结束进程。阻塞发生在fork阶段，时间较短。  自动触发满足RDB持久化条件后会自动执行持久化过程。 触发条件  使用save相关配置 配置格式：save   表示秒内数据集存在次修改时，自动触发bgsa">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/rdb-file-structure.jpg">
+<meta property="og:updated_time" content="2020-06-22T01:56:13.133Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis持久化">
+<meta name="twitter:description" content="RDB持久化触发方式手动触发 save：阻塞式，内存较大的实例在执行过程中会造成长时间的阻塞，影响主进程上的正常服务请求 bgsave：fork子进程，RDB持久化的过程在子进程中进行，完成后自动结束进程。阻塞发生在fork阶段，时间较短。  自动触发满足RDB持久化条件后会自动执行持久化过程。 触发条件  使用save相关配置 配置格式：save   表示秒内数据集存在次修改时，自动触发bgsa">
+<meta name="twitter:image" content="https://wolfchenxing.github.io/images/Redis/rdb-file-structure.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://wolfchenxing.github.io/2020/04/27/Redis/Redis持久化/">
+
+
+
+
+
+  <title>Redis持久化 | 小小卖油翁</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">小小卖油翁</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br>
+            
+            关于
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br>
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://wolfchenxing.github.io/2020/04/27/Redis/Redis持久化/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Yuting">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="小小卖油翁">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis持久化</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2020-04-27T22:21:55+08:00">
+                2020-04-27
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Redis/" itemprop="url" rel="index">
+                    <span itemprop="name">Redis</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+            <div class="post-wordcount">
+              
+                
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-file-word-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">字数统计&#58;</span>
+                
+                <span title="字数统计">
+                  2.8k
+                </span>
+              
+
+              
+                <span class="post-meta-divider">|</span>
+              
+
+              
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-clock-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
+                
+                <span title="阅读时长">
+                  10
+                </span>
+              
+            </div>
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="RDB持久化"><a href="#RDB持久化" class="headerlink" title="RDB持久化"></a>RDB持久化</h1><h2 id="触发方式"><a href="#触发方式" class="headerlink" title="触发方式"></a>触发方式</h2><h3 id="手动触发"><a href="#手动触发" class="headerlink" title="手动触发"></a>手动触发</h3><ul>
+<li>save：阻塞式，内存较大的实例在执行过程中会造成长时间的阻塞，影响主进程上的正常服务请求</li>
+<li>bgsave：fork子进程，RDB持久化的过程在子进程中进行，完成后自动结束进程。阻塞发生在fork阶段，时间较短。</li>
+</ul>
+<h3 id="自动触发"><a href="#自动触发" class="headerlink" title="自动触发"></a>自动触发</h3><p>满足RDB持久化条件后会自动执行持久化过程。</p>
+<p><strong>触发条件</strong></p>
+<ol>
+<li><p>使用save相关配置<br> 配置格式：save <seconds> <changes><br> 表示<seconds>秒内数据集存在<changes>次修改时，自动触发bgsave</changes></seconds></changes></seconds></p>
+<blockquote>
+<p>实现原理：<br>serverCron服务定时器每100ms执行一次检查，满足以下两个条件进行bgsave<br>（1）now() - rdb_last_save_time &lt; m(指定秒数)<br>（2）rdb_changes_since_last_save &gt; n(修改次数))</p>
+</blockquote>
+</li>
+<li><p>主从复制场景下，如果从节点执行全量复制操作，则主节点会执行bgsave命令，并将rdb文件发送给从节点</p>
+</li>
+<li>debug reload命令</li>
+<li>执行shutdown命令时，如果没有开启AOF自动执行bgsave</li>
+</ol>
+<h2 id="RDB持久化步骤"><a href="#RDB持久化步骤" class="headerlink" title="RDB持久化步骤"></a>RDB持久化步骤</h2><ol>
+<li>执行bgsave命令，Redis父进程判断当前是否存在正在执行的子进程，如RDB/AOF子进程，如果存在bgsave命令直接返回</li>
+<li>父进程执行fork操作创建子进程，fork操作过程中父进程会阻塞，通过info stats命令查看latest_fork_usec选项，可以获取最近一个fork操作的耗时，单位为微秒。</li>
+<li>父进程fork完成后，bgsave命令返回“Background saving started”信息并不再阻塞父进程，可以继续响应其他命令。</li>
+<li>子进程创建RDB文件，根据父进程内存生成临时快照文件，完成后对原有文件进行原子替换。执行lastsave命令可以获取最后一次生成RDB的时间，对应info统计的rdb_last_save_time选项。</li>
+<li>进程发送信号给父进程表示完成，父进程更新统计信息，具体见info Persistence下的rdb_*相关选项。</li>
+</ol>
+<h2 id="redis-conf中相关配置"><a href="#redis-conf中相关配置" class="headerlink" title="redis.conf中相关配置"></a>redis.conf中相关配置</h2><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">// 默认打开RDB持久化，bgsave自动触发的条件</span><br><span class="line">save 900 1</span><br><span class="line">save 300 10</span><br><span class="line">save 60 10000</span><br><span class="line">// fork子进程内存不足或RDB文件所在的文件夹没有写入权限，Redis是否停止执行写命令</span><br><span class="line">stop-writes-on-bgsave-error yes</span><br><span class="line">// 是否开启RDB文件压缩，默认采用LZF算法对RDB文件进行压缩。压缩针对数据库中的字符串进行的，且只有在字符串达到一定长度(20字节)时才会进行</span><br><span class="line">rdbcompression yes</span><br><span class="line">// RDB文件名</span><br><span class="line">dbfilename dump.rdb</span><br><span class="line">// 是否开启RDB文件的校验，在写入文件和读取文件时都起作用；关闭checksum在写入文件和启动文件时大约能带来10%的性能提升，但是数据损坏时无法发现</span><br><span class="line">rdbchecksum yes</span><br><span class="line">// RDB和AOF文件所在目录</span><br><span class="line">dir ./</span><br></pre></td></tr></table></figure>
+<h2 id="RDB文件"><a href="#RDB文件" class="headerlink" title="RDB文件"></a>RDB文件</h2><p>RDB文件是经过压缩的二进制文件。不同版本的RDB文件格式不同，故无法利用不同版本的RDB文件恢复数据。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">----------------------------#</span><br><span class="line">52 45 44 49 53              # 魔数&quot;REDIS&quot;</span><br><span class="line">30 30 30 37                 # RDB数据库版本号，3.0服务器数据库为6，3.2服务器数据库为7. &quot;0007&quot; = 7</span><br><span class="line">----------------------------</span><br><span class="line">FA                          # 辅助信息</span><br><span class="line">$string-encoded-key         # 包括Redis服务器版本，系统32或64位,创建时间，可用内存</span><br><span class="line">$string-encoded-value       #                               </span><br><span class="line">----------------------------</span><br><span class="line">FE 00                       # 数据库编号默认16个库. db number = 00</span><br><span class="line">FB                          # 数据库键值对总数量</span><br><span class="line">$length-encoded-int         # 键值对总数</span><br><span class="line">$length-encoded-int         # 过期键值对总数</span><br><span class="line">----------------------------# Key-Value pair starts</span><br><span class="line">FD $unsigned-int            # 过期时间单位秒, 四个字节长的无符号int表示</span><br><span class="line">$value-type                 # 1个字节，表示编码方式</span><br><span class="line">$string-encoded-key         # key值，字符串类型</span><br><span class="line">$encoded-value              # value值,编码方式</span><br><span class="line">----------------------------</span><br><span class="line">FC $unsigned long           # 过期时间单位毫秒, 八个字节长的无符号int表示</span><br><span class="line">$value-type                 # 1个字节，表示编码方式：string,list,set,inset等共14种</span><br><span class="line">$string-encoded-key         # key值，字符串类型</span><br><span class="line">$encoded-value              # value值,编码方式</span><br><span class="line">----------------------------# 无过期时间的键值对      </span><br><span class="line">$value-type                 # 1个字节，表示编码方式</span><br><span class="line">$string-encoded-key         # key值，字符串类型</span><br><span class="line">$encoded-value              # value值,编码方式</span><br><span class="line">----------------------------</span><br><span class="line">FE $length-encoding         # 当前数据库结束，下一个数据库开始（多个数据库场景）.</span><br><span class="line">----------------------------</span><br><span class="line"></span><br><span class="line">FF                          ## RDB文件结束</span><br><span class="line">8-byte-checksum             ## 环冗余校验码，Redis采用crc-64-jones算法，初始值为0.</span><br></pre></td></tr></table></figure>
+<p><img src="/images/Redis/rdb-file-structure.jpg" alt="RDB二进制文件结构"></p>
+<ol>
+<li>REDIS：常量，保存着“REDIS”5个字符。 </li>
+<li>db_version：RDB文件的版本号，注意不是Redis的版本号。 </li>
+<li>SELECTDB 0 pairs：表示一个完整的数据库(0号数据库)，同理SELECTDB 3 pairs表示完整的3号数据库；只有当数据库中有键值对时，RDB文件中才会有该数据库的信息(上图所示的Redis中只有0号和3号数据库有键值对)；如果Redis中所有的数据库都没有键值对，则这一部分直接省略。其中：SELECTDB是一个常量，代表后面跟着的是数据库号码；0和3是数据库号码；pairs则存储了具体的键值对信息，包括key、value值，及其数据类型、内部编码、过期时间、压缩信息等等。 </li>
+<li>EOF：常量，标志RDB文件正文内容结束。 </li>
+<li>check_sum：前面所有内容的校验和；Redis在载入RBD文件时，会计算前面的校验和并与check_sum值比较，判断文件是否损坏。 </li>
+</ol>
+<h2 id="优缺点"><a href="#优缺点" class="headerlink" title="优缺点"></a>优缺点</h2><p><strong>优点</strong></p>
+<ul>
+<li>RDB是一个非常紧凑（有压缩）的文件，它保存了某个时间点的数据，非常适用于数据的备份，可以方便传送到另一个远端数据中心，适用于灾难恢复</li>
+<li>保存RDB文件时父进程唯一需要做的就是fork出一个子进程，接下来的工作全部交由子进程来做，父进程不需要再做其他IO操作，可以最大化Redis性能</li>
+<li>与AOF相比，在恢复大的数据集时，RDB方式会更快一些</li>
+</ul>
+<p><strong>缺点</strong></p>
+<ul>
+<li>Redis意外宕机时，会丢失部分数据</li>
+<li>当Redis数据量比较大时，fork的过程是非常耗时的，fork子进程时是会阻塞的，在这期间Redis不能响应客户端的请求</li>
+<li>RDB文件的致命缺点在于其数据快照的持久化方式决定了必然做不到实时持久化，数据的大量丢失很多时候是无法接受</li>
+<li>RDB文件需要满足特定格式，兼容性差</li>
+</ul>
+<h1 id="AOF持久化"><a href="#AOF持久化" class="headerlink" title="AOF持久化"></a>AOF持久化</h1><p>AOF持久化是通过保存Redis服务器所执行的写命令来记录数据库状态，也就是每当Redis执行一个改变数据集的命令，这个命令就会被追加到AOF文件的末尾。</p>
+<h2 id="触发方式-1"><a href="#触发方式-1" class="headerlink" title="触发方式"></a>触发方式</h2><h3 id="手动触发-1"><a href="#手动触发-1" class="headerlink" title="手动触发"></a>手动触发</h3><p>使用bgrewriteaof命令：Redis主进程fork子进程来执行AOF重写，这个子进程创建新的AOF文件来存储重写结果，防止影响旧文件。<strong>因为fork采用了写时复制机制，子进程不能访问在其被创建出来之后产生的新数据。</strong>Redis使用“<strong>AOF重写缓冲区</strong>”保存这部分新数据，最后父进程将AOF重写缓冲区的数据写入新的AOF文件中然后使用新AOF文件替换老文件。</p>
+<h3 id="自动触发-1"><a href="#自动触发-1" class="headerlink" title="自动触发"></a>自动触发</h3><p>redis.conf中相关配置如下：</p>
+<ul>
+<li>appendonly：是否打开AOF持久化功能，appendonly默认是 no, 改成appendonly yes</li>
+<li>appendfilename：AOF文件名称</li>
+<li>appendfsync：同步频率</li>
+<li>auto-aof-rewrite-min-size：如果文件大小小于此值不会触发AOF，默认64MB</li>
+<li>auto-aof-rewrite-percentage：Redis记录最近的一次AOF操作的文件大小，如果当前AOF文件大小增长超过这个百分比则触发一次重写，默认100</li>
+</ul>
+<h2 id="AOF工作流程"><a href="#AOF工作流程" class="headerlink" title="AOF工作流程"></a>AOF工作流程</h2><ol>
+<li><strong>命令追加（append）</strong>：所有的写入命令会追加到aof_buf（缓冲区）中。</li>
+<li><strong>文件写入（write）和文件同步（sync）</strong>：AOF缓冲区根据对应的策略向硬盘做同步操作。</li>
+<li><strong>文件重写（rewrite）：</strong>随着AOF文件越来越大，需要定期对AOF文件进行重写，达到压缩的目的。</li>
+<li>当Redis服务器重启时，可以加载AOF文件进行数据恢复。</li>
+</ol>
+<p><strong>AOF文件采用文本协议格式的好处</strong></p>
+<ul>
+<li>文本协议具有很好的兼容性。</li>
+<li>文本协议具有可读性，方便直接修改和处理。</li>
+<li>开启AOF后，所有写入命令都包含追加操作，直接采用协议格式，避免了二次处理开销。</li>
+</ul>
+<h2 id="AOF重写机制"><a href="#AOF重写机制" class="headerlink" title="AOF重写机制"></a>AOF重写机制</h2><h3 id="重写必要性"><a href="#重写必要性" class="headerlink" title="重写必要性"></a>重写必要性</h3><p>重写后的AOF文件缩小文件体积有如下原因：<br>1） 进程内已经唾弃的数据不再写入文件<br>2） 旧的AOF文件含有无效命令，如del key1、hdel key2、srem keys、set a 111、set a222等。重写使用      进程内数据直接生成，这样新的AOF文件只保留最终数据的写入命令。<br>3） 多条写命令可以合并为一个，如：lpush list a、lpush list b、lpush list c可以转化为：lpush list a b c。为了防止单条命令过大造成客户端缓冲区溢出，对于list、set、hash、zset等类型操作，以64个元素为界拆分为多条。</p>
+<p>AOF重写降低了文件占用空间，除此之外，另一个目的是：更小的AOF文件可以更快地被Redis加载。</p>
+<h3 id="重写触发机制"><a href="#重写触发机制" class="headerlink" title="重写触发机制"></a>重写触发机制</h3><p>1）、手动触发，直接调用bgrewriteaof命令。<br>2）、自动触发，根据auto-aof-rewrite-min-size和auto-aof-rewrite-percentage参数确定自动触发时机。</p>
+<ul>
+<li>auto-aof-rewrite-min-size：表示运行AOF重写时文件最小体积，默认为64MB。</li>
+<li>auto-aof-rewrite-percentage：代表当前AOF文件空间（aof_current_size）和上一次重写后AOF文件空间（aof_base_size）的比值。</li>
+</ul>
+<p>自动触发的两个条件:</p>
+<ul>
+<li>aof_current_size&gt;auto-aof-rewrite-minsize</li>
+<li>(aof_current_sizeaof_base_size)/aof_base_size&gt;=auto-aof-rewritepercentage</li>
+</ul>
+<h3 id="重写工作流程"><a href="#重写工作流程" class="headerlink" title="重写工作流程"></a>重写工作流程</h3><p>1） 执行AOF重写请求。如果当前进程正在执行AOF重写则不执行重写操作，如果进程在执行bgsave则等待执行完毕后再执行。</p>
+<p>2） 父进程执行fork创建子进程，开销等同于bgsave过程。</p>
+<p>3.1）主进程fork操作完成后，继续响应其他命令。所有修改命令依然写入AOF缓冲区并根据appendfsync策略同步到硬盘，保证原有AOF机制正确性。</p>
+<p>3.2）由于fork操作运用写时复制技术，子进程只能共享fork操作时的内存数据。由于父进程依然响应命令，Redis使用“AOF重写缓冲区”保存这部分新数据，防止新AOF文件生成期间丢失这部分数据。</p>
+<p>4）子进程根据内存快照，按照命令合并规则写入到新的AOF文件。每次批量写入硬盘数据量由配置aof-rewrite-incremental-fsync控制，默认为32MB，防止单次刷盘数据过多造成硬盘阻塞。</p>
+<p>5.1）新AOF文件写入完成后，子进程发送信号给父进程，父进程更新统计信息，具体见info persistence下的aof_*相关统计。</p>
+<p>5.2）父进程把AOF重写缓冲区的数据写入到新的AOF文件。</p>
+<p>5.3）使用新AOF文件替换老文件，完成AOF重写。</p>
+<h2 id="优缺点-1"><a href="#优缺点-1" class="headerlink" title="优缺点"></a>优缺点</h2><p><strong>优点</strong></p>
+<ul>
+<li>支持秒级持久化</li>
+<li>可用于不同版本的Redis服务器，兼容性强</li>
+<li>AOF文件可读性高，易于分析</li>
+</ul>
+<p><strong>缺点</strong></p>
+<ul>
+<li>文件大、恢复速度慢、对性能影响大</li>
+</ul>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/04/26/Redis/Redis数据结构/" rel="next" title="Redis数据结构">
+                <i class="fa fa-chevron-left"></i> Redis数据结构
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+              <a href="/2020/05/08/Redis/Redis主从复制/" rel="prev" title="Redis主从复制">
+                Redis主从复制 <i class="fa fa-chevron-right"></i>
+              </a>
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image" src="/images/avatar.jpg" alt="Yuting">
+            
+              <p class="site-author-name" itemprop="name">Yuting</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">7</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#RDB持久化"><span class="nav-number">1.</span> <span class="nav-text">RDB持久化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#触发方式"><span class="nav-number">1.1.</span> <span class="nav-text">触发方式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#手动触发"><span class="nav-number">1.1.1.</span> <span class="nav-text">手动触发</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#自动触发"><span class="nav-number">1.1.2.</span> <span class="nav-text">自动触发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RDB持久化步骤"><span class="nav-number">1.2.</span> <span class="nav-text">RDB持久化步骤</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-conf中相关配置"><span class="nav-number">1.3.</span> <span class="nav-text">redis.conf中相关配置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RDB文件"><span class="nav-number">1.4.</span> <span class="nav-text">RDB文件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#优缺点"><span class="nav-number">1.5.</span> <span class="nav-text">优缺点</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#AOF持久化"><span class="nav-number">2.</span> <span class="nav-text">AOF持久化</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#触发方式-1"><span class="nav-number">2.1.</span> <span class="nav-text">触发方式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#手动触发-1"><span class="nav-number">2.1.1.</span> <span class="nav-text">手动触发</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#自动触发-1"><span class="nav-number">2.1.2.</span> <span class="nav-text">自动触发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#AOF工作流程"><span class="nav-number">2.2.</span> <span class="nav-text">AOF工作流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#AOF重写机制"><span class="nav-number">2.3.</span> <span class="nav-text">AOF重写机制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#重写必要性"><span class="nav-number">2.3.1.</span> <span class="nav-text">重写必要性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#重写触发机制"><span class="nav-number">2.3.2.</span> <span class="nav-text">重写触发机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#重写工作流程"><span class="nav-number">2.3.3.</span> <span class="nav-text">重写工作流程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#优缺点-1"><span class="nav-number">2.4.</span> <span class="nav-text">优缺点</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Yuting</span>
+
+  
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+    
+      <span class="post-meta-item-text">Site words total count&#58;</span>
+    
+    <span title="Site words total count">20.7k</span>
+  
+</div>
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
