@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="Redis数据分区主从复制的问题 主从复制是通过将master上的数据全量的复制到一个或多个节点上，这是一种通过数据冗余的形式来保证数据的安全性，但是当主节点发生故障时需要从它的从节点中选出一个作为新的主节点，剩下的从节点要与这个新的主节点进行全量复制，如果节点的数据量非常大的时候会带来两个主要问题，网络阻塞和从节点恢复数据会导致进程阻塞，最终会影响到对外提供服务的稳定性。 解决这个问题的关键是要">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis集群">
+<meta property="og:url" content="https://wolfchenxing.github.io/2020/06/22/Redis/Redis集群/index.html">
+<meta property="og:site_name" content="小小卖油翁">
+<meta property="og:description" content="Redis数据分区主从复制的问题 主从复制是通过将master上的数据全量的复制到一个或多个节点上，这是一种通过数据冗余的形式来保证数据的安全性，但是当主节点发生故障时需要从它的从节点中选出一个作为新的主节点，剩下的从节点要与这个新的主节点进行全量复制，如果节点的数据量非常大的时候会带来两个主要问题，网络阻塞和从节点恢复数据会导致进程阻塞，最终会影响到对外提供服务的稳定性。 解决这个问题的关键是要">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/key值到槽映射.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/重新分片流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/请求重定向流程图.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/查找槽所在的节点.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/ASK重定向流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/主观下线流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/客观下线流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/尝试客观下线流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/故障恢复流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/准备选举时间.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/选举投票.jpg">
+<meta property="og:updated_time" content="2020-07-06T10:22:36.249Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis集群">
+<meta name="twitter:description" content="Redis数据分区主从复制的问题 主从复制是通过将master上的数据全量的复制到一个或多个节点上，这是一种通过数据冗余的形式来保证数据的安全性，但是当主节点发生故障时需要从它的从节点中选出一个作为新的主节点，剩下的从节点要与这个新的主节点进行全量复制，如果节点的数据量非常大的时候会带来两个主要问题，网络阻塞和从节点恢复数据会导致进程阻塞，最终会影响到对外提供服务的稳定性。 解决这个问题的关键是要">
+<meta name="twitter:image" content="https://wolfchenxing.github.io/images/Redis/key值到槽映射.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://wolfchenxing.github.io/2020/06/22/Redis/Redis集群/">
+
+
+
+
+
+  <title>Redis集群 | 小小卖油翁</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">小小卖油翁</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br>
+            
+            关于
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br>
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://wolfchenxing.github.io/2020/06/22/Redis/Redis集群/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Yuting">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="小小卖油翁">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis集群</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2020-06-22T18:30:24+08:00">
+                2020-06-22
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Redis/" itemprop="url" rel="index">
+                    <span itemprop="name">Redis</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+            <div class="post-wordcount">
+              
+                
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-file-word-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">字数统计&#58;</span>
+                
+                <span title="字数统计">
+                  4.8k
+                </span>
+              
+
+              
+                <span class="post-meta-divider">|</span>
+              
+
+              
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-clock-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
+                
+                <span title="阅读时长">
+                  17
+                </span>
+              
+            </div>
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="Redis数据分区"><a href="#Redis数据分区" class="headerlink" title="Redis数据分区"></a>Redis数据分区</h1><p><strong>主从复制的问题</strong></p>
+<p>主从复制是通过将master上的数据全量的复制到一个或多个节点上，这是一种通过数据冗余的形式来保证数据的安全性，但是当主节点发生故障时需要从它的从节点中选出一个作为新的主节点，剩下的从节点要与这个新的主节点进行全量复制，如果节点的数据量非常大的时候会带来两个主要问题，网络阻塞和从节点恢复数据会导致进程阻塞，最终会影响到对外提供服务的稳定性。</p>
+<p>解决这个问题的关键是要在不影响服务的前提如何做到这点至关重要减少Redis的数据量，通常我们会采用数据分片的形式来解决问题。将主节点上的全量数据通过分区规则，拆分到不同的分区中，每个节点上可以保存一个或多个分区的数据，将这些节点组成集群对外提供服务。</p>
+<p><strong>Redis数据分区的规则</strong></p>
+<p> Redis Cluser采用虚拟槽分区，所有的键根据哈希函数映射到0~16383整数槽内，计算公式：<code>slot = CRC16（key）&amp; 16383</code>。集群中的每个主节点（Master）都负责处理16384个哈希槽中的一部分，当集群处于稳定状态时，每个哈希槽都只由一个主节点进行处理，每个主节点可以有一个到N个从节点（Slave），当主节点出现宕机或网络断线等不可用时，从节点能自动提升为主节点进行处理。</p>
+<p><img src="/images/Redis/key值到槽映射.jpg" alt="key值到槽映射"></p>
+<h1 id="Redis集群"><a href="#Redis集群" class="headerlink" title="Redis集群"></a>Redis集群</h1><p><strong>Redis集群的特点</strong></p>
+<ul>
+<li>数据按照slot存储分布在多个节点，节点间数据共享，可动态调整数据分布</li>
+<li>可扩展性，节点可动态扩容与缩容</li>
+<li>高可用性，部分节点不可用时，集群仍可用。通过增加Slave做standby数据副本，能够实现故障自动failover，节点之间通过gossip协议交换状态信息，用投票机制完成Slave到Master的角色提升</li>
+</ul>
+<p><strong>Redis集群与单机相比较在功能上存在一些限制</strong></p>
+<ul>
+<li>key批量操作支持有限。如mset、mget，目前只支持具有相同slot值的key执行批量操作。对于映射为不同slot值的key由于执行mget、mget等操作可能存在于多个节点上因此不被支持。</li>
+<li>key事务操作支持有限。同理只支持多key在同一节点上的事务操作，当多个key分布在不同的节点上时无法使用事务功能。</li>
+<li>key作为数据分区的最小粒度，因此不能将一个大的键值对象如hash、list等映射到不同的节点。</li>
+<li>支持多数据库空间。单机下的Redis可以支持16个数据库，集群模式下只能使用一个数据库空间，即db0。</li>
+<li>复制结构只支持一层，从节点只能复制主节点，不支持嵌套树状复制结构。</li>
+</ul>
+<h1 id="集群环境搭建"><a href="#集群环境搭建" class="headerlink" title="集群环境搭建"></a>集群环境搭建</h1><h2 id="1-准备节点"><a href="#1-准备节点" class="headerlink" title="1. 准备节点"></a>1. 准备节点</h2><table>
+<thead>
+<tr>
+<th style="text-align:center">节点</th>
+<th style="text-align:center">角色</th>
+<th style="text-align:center">状态</th>
+<th style="text-align:center">工作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">6379</td>
+<td style="text-align:center">Master</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">处理slot:0-5460</td>
+</tr>
+<tr>
+<td style="text-align:center">6380</td>
+<td style="text-align:center">Master</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">处理slot:5461-10922</td>
+</tr>
+<tr>
+<td style="text-align:center">6381</td>
+<td style="text-align:center">Master</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">处理slot:10923-16383</td>
+</tr>
+<tr>
+<td style="text-align:center">6382</td>
+<td style="text-align:center">Slave</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">复制6379节点</td>
+</tr>
+<tr>
+<td style="text-align:center">6383</td>
+<td style="text-align:center">Slave</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">复制6380节点</td>
+</tr>
+<tr>
+<td style="text-align:center">6384</td>
+<td style="text-align:center">Slave</td>
+<td style="text-align:center">online</td>
+<td style="text-align:center">复制6381节点</td>
+</tr>
+</tbody>
+</table>
+<p><strong>配置文件redis-{port}.conf</strong><br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">port 6379</span><br><span class="line">logfile log/6379.log</span><br><span class="line">cluster-enabled yes</span><br><span class="line">dir data</span><br><span class="line">cluster-node-timeout 15000</span><br><span class="line">cluster-config-file nodes-6379.conf</span><br></pre></td></tr></table></figure></p>
+<p><strong>启动</strong><br><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">redis-server conf/redis-6379.conf</span><br><span class="line">redis-server conf/redis-6380.conf</span><br><span class="line">redis-server conf/redis-6381.conf</span><br><span class="line">redis-server conf/redis-6382.conf</span><br><span class="line">redis-server conf/redis-6383.conf</span><br><span class="line">redis-server conf/redis-6384.conf</span><br></pre></td></tr></table></figure></p>
+<p>节点启动成功后会生成一个nodes-{port}.conf的集群配置文件。当集群内节点信息发生变化，如添加节点、节点下线、故障转移等。节点会自动保存集群状态到配置文件中。需要注意的是，Redis自动维护集群配置文件，不要手动修改。</p>
+<p><strong>启动后集群配置文件里显示的内容：</strong></p>
+<p><id> <a href="ip:port" target="_blank" rel="noopener">ip:port</a> <flags> <master> <ping-sent> <pong-recv> <config-epoch> <link-state> <slot> <slot> … <slot></slot></slot></slot></link-state></config-epoch></pong-recv></ping-sent></master></flags></id></p>
+<ul>
+<li>id: 节点ID,是一个40字节的随机字符串，这个值在节点启动的时候创建，并且永远不会改变。</li>
+<li>ip:port: 客户端与节点通信使用的地址.</li>
+<li>flags: 逗号分割的标记位，可能的值有: myself, master, slave, fail?, fail, handshake, noaddr, noflags. 下一部分将详细介绍这些标记.</li>
+<li>master: 如果节点是slave，并且已知master节点，则这里列出master节点ID,否则的话这里列出”-“。</li>
+<li>ping-sent: 最近一次发送ping的时间，这个时间是一个unix毫秒时间戳，0代表没有发送过.</li>
+<li>pong-recv: 最近一次收到pong的时间，使用unix时间戳表示.</li>
+<li>config-epoch: 节点的epoch值。每当节点发生失败切换时，都会创建一个新的，独特的，递增的epoch。如果多个节点竞争同一个哈希槽时，epoch值更高的节点会抢夺到。</li>
+<li>link-state: node-to-node集群总线使用的链接的状态，我们使用这个链接与集群中其他节点进行通信.值可以是 connected 和 disconnected.</li>
+<li>slot: 哈希槽值或者一个哈希槽范围. 从第9个参数开始，后面最多可能有16384个 数(limit never reached)。代表当前节点可以提供服务的所有哈希槽值。如果只是一个值,那就是只有一个槽会被使用。如果是一个范围，这个值表示为起始槽-结束槽，节点将处理包括起始槽和结束槽在内的所有哈希槽。</li>
+</ul>
+<h2 id="2-节点握手"><a href="#2-节点握手" class="headerlink" title="2. 节点握手"></a>2. 节点握手</h2><p>节点握手是指一批运行在集群模式下的节点通过Gossip协议彼此通信，达到感知对方的过程。</p>
+<p>从6个节点中任意打开一个客户端输入：<code>cluster meet {ip} {port}</code><br><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">127.0.0.1:6379&gt; cluster meet 127.0.0.1 6380</span><br><span class="line">127.0.0.1:6379&gt; cluster meet 127.0.0.1 6381</span><br><span class="line">127.0.0.1:6379&gt; cluster meet 127.0.0.1 6382</span><br><span class="line">127.0.0.1:6379&gt; cluster meet 127.0.0.1 6383</span><br><span class="line">127.0.0.1:6379&gt; cluster meet 127.0.0.1 6384</span><br></pre></td></tr></table></figure></p>
+<blockquote>
+<p><code>cluster info</code>命令：打印集群信息</p>
+</blockquote>
+<h2 id="3-分配槽"><a href="#3-分配槽" class="headerlink" title="3. 分配槽"></a>3. 分配槽</h2><p>Redis集群把所有的数据映射到16384个槽中。每个key会映射为一个固定的槽，只有当节点分配了槽，才能响应和这些槽关联的键命令。<br><code>cluster addslots</code>命令：为节点分配槽。所有槽分配完成后集群的状态会变为ok。</p>
+<h2 id="4-主从复制"><a href="#4-主从复制" class="headerlink" title="4. 主从复制"></a>4. 主从复制</h2><p>作为一个完整的集群，每个负责处理槽的节点应该具有从节点，保证当它出现故障时可以自动进行故障转移。集群模式下，Reids节点角色分为主节点和从节点。首次启动的节点和被分配槽的节点都是主节点，从节点负责复制主节点槽信息和相关的数据。</p>
+<p><code>cluster replicate &lt;master_node_id&gt;</code>命令：将当前从节点设置为node_id指定的master节点的slave节点，只能针对slave节点操作。</p>
+<h1 id="redis-trib-rb搭建集群"><a href="#redis-trib-rb搭建集群" class="headerlink" title="redis-trib.rb搭建集群"></a>redis-trib.rb搭建集群</h1><p>redis-trib.rb是采用Ruby实现的Redis集群管理工具。内部通过Cluster相关命令帮我们简化集群创建、检查、槽迁移和均衡等常见运维操作，使用之前需要安装Ruby依赖环境。</p>
+<ol>
+<li>Ruby安装</li>
+</ol>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#</span><span class="bash"> 下载ruby</span></span><br><span class="line">wget https://cache.ruby-lang.org/pub/ruby/2.3/ruby-2.3.1.tar.gz</span><br><span class="line"><span class="meta">#</span><span class="bash"> 安装ruby</span></span><br><span class="line">tar xvf ruby-2.3.1.tar.gz</span><br><span class="line">./configure -prefix=/usr/local/ruby</span><br><span class="line">make</span><br><span class="line">make install</span><br><span class="line">cd /usr/local/ruby</span><br><span class="line">sudo cp bin/ruby /usr/local/bin</span><br><span class="line">sudo cp bin/gem /usr/local/bin</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span><span class="bash"> 安装rubygems redis依赖</span></span><br><span class="line">wget http://rubygems.org/downloads/redis-3.3.0.gem</span><br><span class="line">gem install -l redis-3.3.0.gem</span><br><span class="line">gem list --check redis gem</span><br><span class="line"></span><br><span class="line"><span class="meta">#</span><span class="bash"> 安装redis-trib.rb</span></span><br><span class="line">sudo cp /&#123;redis_home&#125;/src/redis-trib.rb /usr/local/bin</span><br></pre></td></tr></table></figure>
+<ol start="2">
+<li><p>准备6个节点，与手动搭建方式一致</p>
+</li>
+<li><p>创建集群</p>
+</li>
+</ol>
+<p>创建集群为每个主节点指定一个从节点<br>redis-trib.rb create –replicas <slave num> <master ...> <slave ...></slave></master></slave></p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">redis-trib.rb create --replicas 1 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 127.0.0.1:6382 127.0.0.1:6383 127.0.0.1:6384</span><br></pre></td></tr></table></figure>
+<ol start="4">
+<li>集群完整性检查</li>
+</ol>
+<p>集群完整性指所有的槽都分配到存活的主节点上，只要16384个槽中有一个没有分配给节点则表示集群不完整。可以使用<code>redis-trib.rb check</code>命令检测之前创建的集群是否成功。</p>
+<h1 id="重新分片"><a href="#重新分片" class="headerlink" title="重新分片"></a>重新分片</h1><p>Redis集群提供了灵活的节点扩容和收缩方案。在不影响集群对外服务的情况下，可以为集群添加节点进行扩容,也可以下线部分节点进行缩容。扩容与缩容的本质是，对Redis的槽进行重新的分配。</p>
+<h2 id="重新分片流程"><a href="#重新分片流程" class="headerlink" title="重新分片流程"></a>重新分片流程</h2><p>0) 制订槽分配计划，确保每个节点负责相似数量的槽，从而保证各节点的数据均匀。<br>1) 对目标节点发送<code>cluster setslot {slot} importing {sourceNodeId}</code>命令，让目标节点准备导入槽的数据。<br>2) 对源节点发送<code>cluster setslot {slot} migrating targetNodeId}</code>命令，让源节点准备迁出槽的数据。<br>3) 源节点循环执行<code>cluster getkeysinslot {slot} {count}</code>命令，获取count个属于槽{slot}的键。<br>4) 在源节点上执行<code>migrate {targetIp} {targetPort} &quot;&quot; 0 {timeout} keys{keys...}</code>命令，把获取的键通过流水线（pipeline）机制批量迁移到目标节点。<br>5) 重复执行步骤3）和步骤4）直到槽下所有的键值数据迁移到目标节点。<br>6) 向集群内所有主节点发送<code>cluster setslot {slot} node {targetNodeId}</code>命令，通知槽分配给目标节点。为了保证槽节点映射变更及时传播，需要遍历发送给所有主节点更新被迁移的槽指向新节点。</p>
+<p><img src="/images/Redis/重新分片流程.jpg" alt="重新分片流程"></p>
+<h2 id="redis-trib相关命令"><a href="#redis-trib相关命令" class="headerlink" title="redis-trib相关命令"></a>redis-trib相关命令</h2><p><strong>加入节点</strong><br>redis-trib.rb add-node new_host:new_port existing_host:existing_port –slave–master-id </p>
+<p><strong>重新分配槽</strong><br>redis-trib.rb reshard host:port –from –to –slots –yes –timeout –pipeline</p>
+<ul>
+<li>host：port：必传参数，集群内任意节点地址，用来获取整个集群信息。</li>
+<li>·–from：制定源节点的id，如果有多个源节点，使用逗号分隔，如果是all源节点变为集群内所有主节点，在迁移过程中提示用户输入。</li>
+<li>·–to：需要迁移的目标节点的id，目标节点只能填写一个，在迁移过程中提示用户输入。</li>
+<li>·–slots：需要迁移槽的总数量，在迁移过程中提示用户输入。</li>
+<li>·–yes：当打印出reshard执行计划时，是否需要用户输入yes确认后再执行reshard。</li>
+<li>·–timeout：控制每次migrate操作的超时时间，默认为60000毫秒。</li>
+<li>·–pipeline：控制每次批量迁移键的数量，默认为10</li>
+</ul>
+<h1 id="命令路由"><a href="#命令路由" class="headerlink" title="命令路由"></a>命令路由</h1><h2 id="请求重定向"><a href="#请求重定向" class="headerlink" title="请求重定向"></a>请求重定向</h2><p>在集群模式下，Redis接收任何键相关命令时首先计算键对应的槽，再根据槽找出所对应的节点，如果节点是自身，则处理键命令；否则回复MOVED重定向错误，通知客户端请求正确的节点。</p>
+<p><img src="/images/Redis/请求重定向流程图.jpg" alt="请求重定向流程图"></p>
+<p>请求重定向最重要的两个步骤是，计算槽和查找槽所在的节点。</p>
+<h3 id="计算槽"><a href="#计算槽" class="headerlink" title="计算槽"></a>计算槽</h3><p>Redis首先需要计算键所对应的槽。根据键的有效部分使用CRC16函数计算出散列值，再<code>&amp;16383</code>获得0～16383之间的整数值作为槽数。</p>
+<ul>
+<li>执行<code>cluster keyslot {key}</code>命令可以反key对应的槽。</li>
+<li>键内部使用大括号包含的内容又叫做hash_tag，它提供不同的键可以具备相同slot的功能。mget等命令优化批量调用时，键列表必须具有相同的slot，否则会报错，此时可以使用hash_tag，使键分配在统一个槽中.<br>例如：获取店铺1、店铺2、店铺3的最近10名关注者<br>mget follows:{10}:shop1 follows:{10}:shop2 vfollows:{10}:shop3</li>
+<li>使用redis-cli命令时，可以加入-c参数支持自动重定向，简化手动发起重定向操作</li>
+</ul>
+<h3 id="查找槽所在的节点"><a href="#查找槽所在的节点" class="headerlink" title="查找槽所在的节点"></a>查找槽所在的节点</h3><p>集群内通过ping/pong消息交换每个节点都会知道所有节点的槽信息，这些信息会保存在ClusterState对象中</p>
+<p><img src="/images/Redis/查找槽所在的节点.jpg" alt="查找槽所在的节点"></p>
+<p>请求重定向会增加网络开销，可以考虑在应用方缓存一份集群节点与槽的对照关系表，在发生MOVE重定向消息时，更新节点对照表，最大限度的减少MOVE几率发生。</p>
+<h2 id="ASK重定向"><a href="#ASK重定向" class="headerlink" title="ASK重定向"></a>ASK重定向</h2><p>Redis集群支持在线迁移槽（slot）和数据来完成水平伸缩，当slot对应的数据从源节点到目标节点迁移过程中可能出现一部分数据在源节点，而另一部分在目标节点，客户端需要做到智能识别，保证键命令可正常执行。</p>
+<p>槽在迁移中发生请求的流程：<br>1）客户端根据本地slots缓存发送命令到源节点，如果存在键对象则直接执行并返回结果给客户端。<br>2）如果键对象不存在，则可能存在于目标节点，这时源节点会回复ASK重定向异常。格式如下：（error）ASK{slot}{targetIP}：{targetPort}。<br>3）客户端从ASK重定向异常提取出目标节点信息，发送asking命令到目标节点打开客户端连接标识，再执行键命令。如果存在则执行，不存在则返回不存在信息。</p>
+<p><img src="/images/Redis/ASK重定向流程.jpg" alt="ASK重定向流程"></p>
+<h2 id="ASK与MOVED重定向的对比"><a href="#ASK与MOVED重定向的对比" class="headerlink" title="ASK与MOVED重定向的对比"></a>ASK与MOVED重定向的对比</h2><p>ASK与MOVED虽然都是对客户端的重定向控制，但是有着本质区别：</p>
+<ul>
+<li>ASK重定向说明集群正在进行slot数据迁移，客户端无法知道什么时候迁移 完成，因此只能是临时性的重定向，客户端不会更新slots缓存</li>
+<li>但是MOVED重定向说明键对应的槽已经明确指定到新的节点，因此需要更新slots缓存</li>
+</ul>
+<h1 id="故障转移"><a href="#故障转移" class="headerlink" title="故障转移"></a>故障转移</h1><p>Redis集群自身实现了高可用，当集群内少量节点出现故障时通过自动故障转移保证集群可以正常对<br>外提供服务。</p>
+<h2 id="故障发现"><a href="#故障发现" class="headerlink" title="故障发现"></a>故障发现</h2><p>Redis集群内节点通过ping/pong消息实现节点通信，消息不但可以传播节点槽信息，还可以传播其他状态如：主从状态、节点故障等。因此故障发现也是通过消息传播机制实现的，主要环节包括：主观下线（pfail）和客观下线（fail）。</p>
+<h3 id="主观下线"><a href="#主观下线" class="headerlink" title="主观下线"></a>主观下线</h3><p>主观下线指某个节点认为另一个节点不可用，即下线状态，这个状态并不是最终的故障判定，只能代表一个节点的意见，可能存在误判情况。</p>
+<p><img src="/images/Redis/主观下线流程.jpg" alt="主观下线流程"></p>
+<h3 id="客观下线"><a href="#客观下线" class="headerlink" title="客观下线"></a>客观下线</h3><p>Redis集群对于节点最终是否故障需要与集群中的其他主节点功能协商，多个节点协作完成故障发现的过程叫做客观下线。</p>
+<p>客观下线指标记一个节点真正的下线，集群内多个节点都认为该节点不可用，从而达成共识的结果。如果是持有槽的主节点故障，需要为该节点进行故障转移。</p>
+<p><img src="/images/Redis/客观下线流程.jpg" alt="客观下线流程"></p>
+<p>1) 当消息体内含有其他节点的pfail状态会判断发送节点的状态，如果发送节点是主节点，则对报告的pfail状态处理，从节点则忽略。</p>
+<p>2) 找到pfail对应的节点结构，更新clusterNode内部下线报告链表。<br><strong>维护下线报告链表：</strong><br>每个节点ClusterNode结构中都会存在一个下线链表结构，保存了其他主节点针对当前节点的下线报告。<br><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">clusterNodeFailReport</span> &#123;</span></span><br><span class="line">     <span class="class"><span class="keyword">struct</span> <span class="title">clusterNode</span> *<span class="title">node</span>;</span> <span class="comment">/* 报告该节点为主观下线的节点 */</span></span><br><span class="line">     <span class="keyword">mstime_t</span> time; <span class="comment">/* 最近收到下线报告的时间 */</span></span><br><span class="line">&#125; clusterNodeFailReport;</span><br></pre></td></tr></table></figure></p>
+<p>3) 根据更新后的下线报告链表告尝试进行客观下线。</p>
+<p><img src="/images/Redis/尝试客观下线流程.jpg" alt="尝试客观下线流程"></p>
+<p>如果在<code>cluster-node-time * 2</code>时间内无法收集到一半以上槽节点的下线报告，那么之前的下线报告将会过期，也就是说主观下线上报的速度追赶不上下线报告过期的速度，那么故障节点将永远无法被标记为客观下线从而导致故障转移失败。因此不建议将cluster-node-time设置得过小。</p>
+<p>向集群广播下线节点的fail消息:</p>
+<ul>
+<li>通知集群内所有的节点标记故障节点为客观下线状态并立刻生效。</li>
+<li>通知故障节点的从节点触发故障转移流程。</li>
+</ul>
+<h2 id="故障恢复"><a href="#故障恢复" class="headerlink" title="故障恢复"></a>故障恢复</h2><p>故障节点变为客观下线后，如果下线节点是持有槽的主节点则需要在它的从节点中选出一个新的主节点，从而保证集群的高可用。下线主节点的所有从节点承担故障恢复的义务，当从节点通过内部定时任务发现自身复制的主节点进入客观下线时，将会触发故障恢复流程。</p>
+<p><img src="/images/Redis/故障恢复流程.jpg" alt="故障恢复流程"></p>
+<h3 id="资格检查"><a href="#资格检查" class="headerlink" title="资格检查"></a>资格检查</h3><p>每个从节点都要检查最后与主节点断线时间，判断是否有资格替换故障的主节点。如果从节点与主节点断线时间超过<code>cluster-node-time * cluster-slave-validity-factor</code>，则当前从节点不具备故障转移资格。cluster-slave-validity-factor从节点有效因子可以在配置文件中修改。</p>
+<h3 id="准备选举时间"><a href="#准备选举时间" class="headerlink" title="准备选举时间"></a>准备选举时间</h3><p>计算下线主节点所有从节点的优先级排名（复制偏移量越大优先级越高），排名高的从节点优选获得选举权，排名每降低一位则延迟1秒开始选举。</p>
+<p><img src="/images/Redis/准备选举时间.jpg" alt="准备选举时间"></p>
+<h3 id="发起选举"><a href="#发起选举" class="headerlink" title="发起选举"></a>发起选举</h3><p>当从节点定时任务检测到达故障选举时间到达后，发起选举流。</p>
+<p>在集群内广播选举消息（FAILOVER_AUTH_REQUEST），并记录已发送过消息的状态，保证该从节点在一个配置纪元内只能发起一次选举。</p>
+<h3 id="选举投票"><a href="#选举投票" class="headerlink" title="选举投票"></a>选举投票</h3><p>只有持有槽的主节点才会处理故障选举消息（FAILOVER_AUTH_REQUEST），因为每个持有槽的节点在一个配置纪元内都有唯一的一张选票，当接到第一个请求投票的从节点消息时回复FAILOVER_AUTH_ACK消息作为投票，之后相同配置纪元内其他从节点的选举消息将忽略。</p>
+<p>如集群内有N个持有槽的主节点代表有N张选票。由于在每个配置纪元内持有槽的主节点只能投票给一个从节点，因此只能有一个从节点获得N/2+1的选票，保证能够找出唯一的从节点。</p>
+<p>投票作废：每个配置纪元代表了一次选举周期，如果在开始投票之后的<code>cluster-node-timeout * 2</code>时间内从节点没有获取足够数量的投票，则本次选举作废。从节点对配置纪元自增并发起下一轮投票，直到选举成功为止。</p>
+<p><img src="/images/Redis/选举投票.jpg" alt="选举投票"></p>
+<h3 id="替换主节点"><a href="#替换主节点" class="headerlink" title="替换主节点"></a>替换主节点</h3><p>a. 当前从节点取消复制变为主节点。<br>b. 执行clusterDelSlot操作撤销故障主节点负责的槽，并执行clusterAddSlot把这些槽委派给自己。<br>c. 向集群广播消息，通知集群内所有的节点当前从节点变为主节点并接管了故障主节点的槽信息。</p>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/06/03/Redis/Redis哨兵/" rel="next" title="Redis哨兵">
+                <i class="fa fa-chevron-left"></i> Redis哨兵
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image" src="/images/avatar.jpg" alt="Yuting">
+            
+              <p class="site-author-name" itemprop="name">Yuting</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">8</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Redis数据分区"><span class="nav-number">1.</span> <span class="nav-text">Redis数据分区</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Redis集群"><span class="nav-number">2.</span> <span class="nav-text">Redis集群</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#集群环境搭建"><span class="nav-number">3.</span> <span class="nav-text">集群环境搭建</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-准备节点"><span class="nav-number">3.1.</span> <span class="nav-text">1. 准备节点</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-节点握手"><span class="nav-number">3.2.</span> <span class="nav-text">2. 节点握手</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-分配槽"><span class="nav-number">3.3.</span> <span class="nav-text">3. 分配槽</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-主从复制"><span class="nav-number">3.4.</span> <span class="nav-text">4. 主从复制</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#redis-trib-rb搭建集群"><span class="nav-number">4.</span> <span class="nav-text">redis-trib.rb搭建集群</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#重新分片"><span class="nav-number">5.</span> <span class="nav-text">重新分片</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#重新分片流程"><span class="nav-number">5.1.</span> <span class="nav-text">重新分片流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-trib相关命令"><span class="nav-number">5.2.</span> <span class="nav-text">redis-trib相关命令</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#命令路由"><span class="nav-number">6.</span> <span class="nav-text">命令路由</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#请求重定向"><span class="nav-number">6.1.</span> <span class="nav-text">请求重定向</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#计算槽"><span class="nav-number">6.1.1.</span> <span class="nav-text">计算槽</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#查找槽所在的节点"><span class="nav-number">6.1.2.</span> <span class="nav-text">查找槽所在的节点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ASK重定向"><span class="nav-number">6.2.</span> <span class="nav-text">ASK重定向</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ASK与MOVED重定向的对比"><span class="nav-number">6.3.</span> <span class="nav-text">ASK与MOVED重定向的对比</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#故障转移"><span class="nav-number">7.</span> <span class="nav-text">故障转移</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#故障发现"><span class="nav-number">7.1.</span> <span class="nav-text">故障发现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#主观下线"><span class="nav-number">7.1.1.</span> <span class="nav-text">主观下线</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#客观下线"><span class="nav-number">7.1.2.</span> <span class="nav-text">客观下线</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#故障恢复"><span class="nav-number">7.2.</span> <span class="nav-text">故障恢复</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#资格检查"><span class="nav-number">7.2.1.</span> <span class="nav-text">资格检查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#准备选举时间"><span class="nav-number">7.2.2.</span> <span class="nav-text">准备选举时间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#发起选举"><span class="nav-number">7.2.3.</span> <span class="nav-text">发起选举</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#选举投票"><span class="nav-number">7.2.4.</span> <span class="nav-text">选举投票</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#替换主节点"><span class="nav-number">7.2.5.</span> <span class="nav-text">替换主节点</span></a></li></ol></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Yuting</span>
+
+  
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+    
+      <span class="post-meta-item-text">Site words total count&#58;</span>
+    
+    <span title="Site words total count">25.6k</span>
+  
+</div>
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
