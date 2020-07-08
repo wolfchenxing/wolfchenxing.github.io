@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+
+
+
+  
+
+
+<html class="theme-next mist use-motion" lang="zh-Hans">
+<head><meta name="generator" content="Hexo 3.9.0">
+  <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#222">
+
+
+
+
+
+
+
+
+
+<meta http-equiv="Cache-Control" content="no-transform">
+<meta http-equiv="Cache-Control" content="no-siteapp">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+  <link href="/lib/fancybox/source/jquery.fancybox.css?v=2.1.5" rel="stylesheet" type="text/css">
+
+
+
+
+
+
+
+<link href="/lib/font-awesome/css/font-awesome.min.css?v=4.6.2" rel="stylesheet" type="text/css">
+
+<link href="/css/main.css?v=5.1.4" rel="stylesheet" type="text/css">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png?v=5.1.4">
+
+
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png?v=5.1.4">
+
+
+  <link rel="mask-icon" href="/images/logo.svg?v=5.1.4" color="#222">
+
+
+
+
+
+  <meta name="keywords" content="Hexo, NexT">
+
+
+
+
+
+
+
+
+
+
+<meta name="description" content="缓存的收益与成本收益  加速读写：因为缓存通常都是全内存的（例如Redis、Memcache），而存储层通常读写性能不够强悍（例如MySQL），通过缓存的使用可以有效地加速读写，优化用户体验。 降低后端负载：帮助后端减少访问量和复杂计算（例如很复杂的SQL语句），在很大程度降低了后端的负载。  成本  数据不一致性：缓存层和存储层的数据存在着一定时间窗口的不一致性，时间窗口跟更新策略有关。 代码维">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Redis缓存设计">
+<meta property="og:url" content="https://wolfchenxing.github.io/2020/07/07/Redis/Redis缓存设计/index.html">
+<meta property="og:site_name" content="小小卖油翁">
+<meta property="og:description" content="缓存的收益与成本收益  加速读写：因为缓存通常都是全内存的（例如Redis、Memcache），而存储层通常读写性能不够强悍（例如MySQL），通过缓存的使用可以有效地加速读写，优化用户体验。 降低后端负载：帮助后端减少访问量和复杂计算（例如很复杂的SQL语句），在很大程度降低了后端的负载。  成本  数据不一致性：缓存层和存储层的数据存在着一定时间窗口的不一致性，时间窗口跟更新策略有关。 代码维">
+<meta property="og:locale" content="zh-Hans">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/内存溢出淘汰流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/定时删除流程.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/应用方更新缓存a.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/应用方更新缓存b.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/应用方更新缓存c.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/布隆过滤器.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/缓存雪崩.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/缓存击穿_分布式互斥锁.jpg">
+<meta property="og:image" content="https://wolfchenxing.github.io/images/Redis/缓存击穿_永不过期.jpg">
+<meta property="og:updated_time" content="2020-07-08T11:54:44.306Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Redis缓存设计">
+<meta name="twitter:description" content="缓存的收益与成本收益  加速读写：因为缓存通常都是全内存的（例如Redis、Memcache），而存储层通常读写性能不够强悍（例如MySQL），通过缓存的使用可以有效地加速读写，优化用户体验。 降低后端负载：帮助后端减少访问量和复杂计算（例如很复杂的SQL语句），在很大程度降低了后端的负载。  成本  数据不一致性：缓存层和存储层的数据存在着一定时间窗口的不一致性，时间窗口跟更新策略有关。 代码维">
+<meta name="twitter:image" content="https://wolfchenxing.github.io/images/Redis/内存溢出淘汰流程.jpg">
+
+
+
+<script type="text/javascript" id="hexo.configurations">
+  var NexT = window.NexT || {};
+  var CONFIG = {
+    root: '/',
+    scheme: 'Mist',
+    version: '5.1.4',
+    sidebar: {"position":"left","display":"post","offset":12,"b2t":false,"scrollpercent":false,"onmobile":false},
+    fancybox: true,
+    tabs: true,
+    motion: {"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},
+    duoshuo: {
+      userId: '0',
+      author: '博主'
+    },
+    algolia: {
+      applicationID: '',
+      apiKey: '',
+      indexName: '',
+      hits: {"per_page":10},
+      labels: {"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}
+    }
+  };
+</script>
+
+
+
+  <link rel="canonical" href="https://wolfchenxing.github.io/2020/07/07/Redis/Redis缓存设计/">
+
+
+
+
+
+  <title>Redis缓存设计 | 小小卖油翁</title>
+  
+
+
+
+
+
+
+
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" lang="zh-Hans">
+
+  
+  
+    
+  
+
+  <div class="container sidebar-position-left page-post-detail">
+    <div class="headband"></div>
+
+    <header id="header" class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-wrapper">
+  <div class="site-meta ">
+    
+
+    <div class="custom-logo-site-title">
+      <a href="/" class="brand" rel="start">
+        <span class="logo-line-before"><i></i></span>
+        <span class="site-title">小小卖油翁</span>
+        <span class="logo-line-after"><i></i></span>
+      </a>
+    </div>
+      
+        <p class="site-subtitle"></p>
+      
+  </div>
+
+  <div class="site-nav-toggle">
+    <button>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+      <span class="btn-bar"></span>
+    </button>
+  </div>
+</div>
+
+<nav class="site-nav">
+  
+
+  
+    <ul id="menu" class="menu">
+      
+        
+        <li class="menu-item menu-item-home">
+          <a href="/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-home"></i> <br>
+            
+            首页
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-user"></i> <br>
+            
+            关于
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-tags">
+          <a href="/tags/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-tags"></i> <br>
+            
+            标签
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-categories">
+          <a href="/categories/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-th"></i> <br>
+            
+            分类
+          </a>
+        </li>
+      
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives/" rel="section">
+            
+              <i class="menu-item-icon fa fa-fw fa-archive"></i> <br>
+            
+            归档
+          </a>
+        </li>
+      
+
+      
+    </ul>
+  
+
+  
+</nav>
+
+
+
+ </div>
+    </header>
+
+    <main id="main" class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          <div id="content" class="content">
+            
+
+  <div id="posts" class="posts-expand">
+    
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal" itemscope itemtype="http://schema.org/Article">
+  
+  
+  
+  <div class="post-block">
+    <link itemprop="mainEntityOfPage" href="https://wolfchenxing.github.io/2020/07/07/Redis/Redis缓存设计/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="name" content="Yuting">
+      <meta itemprop="description" content>
+      <meta itemprop="image" content="/images/avatar.jpg">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="小小卖油翁">
+    </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">Redis缓存设计</h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">发表于</span>
+              
+              <time title="创建于" itemprop="dateCreated datePublished" datetime="2020-07-07T14:34:34+08:00">
+                2020-07-07
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+            <span class="post-category">
+            
+              <span class="post-meta-divider">|</span>
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-folder-o"></i>
+              </span>
+              
+                <span class="post-meta-item-text">分类于</span>
+              
+              
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/Redis/" itemprop="url" rel="index">
+                    <span itemprop="name">Redis</span>
+                  </a>
+                </span>
+
+                
+                
+              
+            </span>
+          
+
+          
+            
+          
+
+          
+          
+
+          
+
+          
+            <div class="post-wordcount">
+              
+                
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-file-word-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">字数统计&#58;</span>
+                
+                <span title="字数统计">
+                  2.9k
+                </span>
+              
+
+              
+                <span class="post-meta-divider">|</span>
+              
+
+              
+                <span class="post-meta-item-icon">
+                  <i class="fa fa-clock-o"></i>
+                </span>
+                
+                  <span class="post-meta-item-text">阅读时长 &asymp;</span>
+                
+                <span title="阅读时长">
+                  9
+                </span>
+              
+            </div>
+          
+
+          
+
+        </div>
+      </header>
+    
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        <h1 id="缓存的收益与成本"><a href="#缓存的收益与成本" class="headerlink" title="缓存的收益与成本"></a>缓存的收益与成本</h1><p><strong>收益</strong></p>
+<ul>
+<li>加速读写：因为缓存通常都是全内存的（例如Redis、Memcache），而存储层通常读写性能不够强悍（例如MySQL），通过缓存的使用可以有效地加速读写，优化用户体验。</li>
+<li>降低后端负载：帮助后端减少访问量和复杂计算（例如很复杂的SQL语句），在很大程度降低了后端的负载。</li>
+</ul>
+<p><strong>成本</strong></p>
+<ul>
+<li>数据不一致性：缓存层和存储层的数据存在着一定时间窗口的不一致性，时间窗口跟更新策略有关。</li>
+<li>代码维护成本：加入缓存后，需要同时处理缓存层和存储层的逻辑，增大了开发者维护代码的成本。</li>
+<li>运维成本：以Redis Cluster为例，加入后无形中增加了运维成本。</li>
+</ul>
+<p><strong>使用场景</strong></p>
+<ul>
+<li>开销大的复杂计算：以MySQL为例子，一些复杂的操作或者计算（例如大量联表操作、一些分组计算），如果不加缓存，不但无法满足高并发量，同时也会给MySQL带来巨大的负担。</li>
+<li>加速请求响应：即使查询单条后端数据足够快，那么依然可以使用缓存，以Redis为例子，每秒可以完成数万次读写，并且提供的批量操作可以优化整个IO链的响应时间。</li>
+</ul>
+<h1 id="缓存更新策略"><a href="#缓存更新策略" class="headerlink" title="缓存更新策略"></a>缓存更新策略</h1><h2 id="内存溢出淘汰策略"><a href="#内存溢出淘汰策略" class="headerlink" title="内存溢出淘汰策略"></a>内存溢出淘汰策略</h2><p>当Redis所用内存达到maxmemory上限（used_memory &gt; maxmemory）时会触发相应的溢出控制策略。具体策略受<code>maxmemory-policy</code>参数控制。</p>
+<p>Redis支持6种策略：</p>
+<ul>
+<li><strong>noeviction</strong>：默认策略，不会删除任何数据，拒绝所有写入操作并返回客户端错误信息（error）OOM command not allowed when used memory，此时Redis只响应读操作。</li>
+<li><strong>volatile-lru</strong>：根据LRU算法删除设置了超时属性（expire）的键，直到腾出足够空间为止。如果没有可删除的键对象，回退到noeviction策略。</li>
+<li><strong>volatile-random</strong>：随机删除过期键，直到腾出足够空间为止。</li>
+<li><strong>allkeys-lru</strong>：根据LRU算法删除键，不管数据有没有设置超时属性，直到腾出足够空间为止。</li>
+<li><strong>allkeys-random</strong>：随机删除所有键，直到腾出足够空间为止。</li>
+<li><strong>volatile-ttl</strong>：根据键值对象的ttl属性，删除最近将要过期数据。如果没有，回退到noeviction策略</li>
+</ul>
+<p>内存溢出控制策略可以采用<code>config set maxmemory-policy {policy}</code>动态配置。<br>写命令导致当内存溢出时，会频繁执行回收内存成本很高，如果Redis有从节点，回收内存操作对应的删除命令会同步到从节点，导致写放大的问题。</p>
+<p><img src="/images/Redis/内存溢出淘汰流程.jpg" alt="内存溢出淘汰流程"></p>
+<h2 id="过期删除"><a href="#过期删除" class="headerlink" title="过期删除"></a>过期删除</h2><h3 id="惰性删除"><a href="#惰性删除" class="headerlink" title="惰性删除"></a>惰性删除</h3><p>Redis的每个库都有一个过期字典，过期字典中保存所有key的过期时间。当客户端读取一个key时会先到过期字典内查询key是否已经过期，如果已经超过键，会执行删除操作并返回空。这种策略是出于节省CPU成本考虑，但是单独用这种方式存在内存泄露的问题，当过期键一直没有访问将无法得到及时删除，从而导致内存不能及时释放。</p>
+<h3 id="定时删除"><a href="#定时删除" class="headerlink" title="定时删除"></a>定时删除</h3><p>Redis内部维护一个定时任务，ServerCron函数，默认每秒运行10次。通过hz修改运行次数。定时任务中删除过期键逻辑采用了自适应算法，根据键的过期比例、使用快慢两种速率模式回收键。</p>
+<ul>
+<li>慢模式：定时任务执行时间超过25毫秒自动退出</li>
+<li>快模式：上次执行时间超过25毫秒，则采用快模式，快模式下超时时间为1毫秒且2秒内只能运行1次</li>
+</ul>
+<p><img src="/images/Redis/定时删除流程.jpg" alt="定时删除流程"></p>
+<h2 id="应用方更新"><a href="#应用方更新" class="headerlink" title="应用方更新"></a>应用方更新</h2><p>a、应用程序先从cache取数据，没有得到，则从数据库中取数据，成功后，放到缓存中。</p>
+<p><img src="/images/Redis/应用方更新缓存a.jpg" alt="应用方更新缓存a"></p>
+<p>b、先删除缓存，再更新数据库</p>
+<p>这个操作有一个比较大的问题，更新数据的请求在对缓存删除完之后，又收到一个读请求，这个时候由于缓存被删除所以直接会读库，读操作的数据是老的并且会被加载进入缓存当中，后续读请求全部访问的老数据。</p>
+<p><img src="/images/Redis/应用方更新缓存b.jpg" alt="应用方更新缓存b"></p>
+<p>c、先更新数据库，再删除缓存(推荐)</p>
+<p>为什么不是写完数据库后更新缓存？主要是怕两个并发的写操作导致脏数据。</p>
+<p><img src="/images/Redis/应用方更新缓存c.jpg" alt="应用方更新缓存c"></p>
+<h1 id="缓存粒度"><a href="#缓存粒度" class="headerlink" title="缓存粒度"></a>缓存粒度</h1><ol>
+<li>通用性</li>
+</ol>
+<p>缓存全部数据比部分数据更加通用，但从实际经验看，很长时间内应用只需要几个重要的属性。</p>
+<ol start="2">
+<li>占用空间</li>
+</ol>
+<p>缓存全部数据要比部分数据占用更多的空间，存在以下问题：</p>
+<ul>
+<li>全部数据会造成内存的浪费。</li>
+<li>全部数据可能每次传输产生的网络流量会比较大，耗时相对较大，在极端情况下会阻塞网络。</li>
+<li>全部数据的序列化和反序列化的CPU开销更大。</li>
+</ul>
+<ol start="3">
+<li>代码维护</li>
+</ol>
+<p>全部数据的优势更加明显，而部分数据一旦要加新字段需要修改业务代码，而且修改后通常还需要刷新缓存数据。</p>
+<h1 id="缓存穿透"><a href="#缓存穿透" class="headerlink" title="缓存穿透"></a>缓存穿透</h1><p>缓存穿透是指查询一个根本不存在的数据，缓存层和持久层都不会命中，通常出于容错的考虑，如果从持久层查不到数据则不写入缓存层。缓存穿透将导致不存在的数据每次请求都要到持久层去查询，失去了缓存保护后端持久的意义。</p>
+<p>缓存穿透问题可能会使后端存储负载加大，由于很多后端持久层不具备高并发性，甚至可能造成后端存储宕掉。通常可以在程序中统计总调用数、缓存层命中数、如果同一个Key的缓存命中率很低，可能就是出现了缓存穿透问题。</p>
+<p>造成缓存穿透的基本原因有两个。第一，自身业务代码或者数据出现问题，第二，一些恶意攻击、爬虫等造成大量空命中。</p>
+<h2 id="解决方案"><a href="#解决方案" class="headerlink" title="解决方案"></a>解决方案</h2><h3 id="缓存空对象"><a href="#缓存空对象" class="headerlink" title="缓存空对象"></a>缓存空对象</h3><p>缓存空对象会有两个问题：<br>第一，空值做了缓存，意味着缓存层中存了更多的键，需要更多的内存空间，比较有效的方法是针对这类数据设置一个较短的过期时间，让其自动剔除。<br>第二，缓存层和存储层的数据会有一段时间窗口的不一致，可能会对业务有一定影响。例如过期时间设置为5分钟，如果此时存储层添加了这个数据，那此段时间就会出现缓存层和存储层数据的不一致，此时可以利用消息系统或者其他方式清除掉缓存层中的空对象。</p>
+<h3 id="布隆过滤器拦截"><a href="#布隆过滤器拦截" class="headerlink" title="布隆过滤器拦截"></a>布隆过滤器拦截</h3><p>在访问缓存层和存储层之前，将存在的key用布隆过滤器提前保存起来，做第一层拦截，当收到一个对key请求时先用布隆过滤器验证key是否存在，如果存在再进入缓存层、存储层。可以使用bitmap做布隆过滤器。这种方法适用于数据命中不高、数据相对固定、实时性低的应用场景，代码维护较为复杂，但是缓存空间占用少。</p>
+<p>布隆过滤器实际上是一个很长的二进制向量和一系列随机映射函数。布隆过滤器可以用于检索一个元素是否在一个集合中。它的优点是空间效率和查询时间都远远超过一般的算法，缺点是有一定的误识别率和删除困难。</p>
+<p>算法描述：</p>
+<ul>
+<li>初始状态时，BloomFilter是一个长度为m的位数组，每一位都置为0。</li>
+<li>添加元素x时，x使用k个hash函数得到k个hash值，对m取余，对应的bit位设置为1。</li>
+<li>判断y是否属于这个集合，对y使用k个哈希函数得到k个哈希值，对m取余，所有对应的位置都是1，则认为y属于该集合（哈希冲突，可能存在误判），否则就认为y不属于该集合。可以通过增加哈希函数和增加二进制位数组的长度来降低误报率。</li>
+</ul>
+<p><img src="/images/Redis/布隆过滤器.jpg" alt="布隆过滤器"></p>
+<h2 id="方案对比"><a href="#方案对比" class="headerlink" title="方案对比"></a>方案对比</h2><table>
+<thead>
+<tr>
+<th style="text-align:center">解决缓存穿透</th>
+<th style="text-align:center">适用场景</th>
+<th style="text-align:center">维护成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">缓存空对象</td>
+<td style="text-align:center">数据命中不高<br>数据频繁变化实时性高</td>
+<td style="text-align:center">代码维护简单<br>需要过多的缓存空间<br>数据不一致</td>
+</tr>
+<tr>
+<td style="text-align:center">布隆过滤器</td>
+<td style="text-align:center">数据命中不高<br>数据相对固定实时性低</td>
+<td style="text-align:center">代码维护复杂<br>缓存空间占用少</td>
+</tr>
+</tbody>
+</table>
+<h1 id="缓存雪崩"><a href="#缓存雪崩" class="headerlink" title="缓存雪崩"></a>缓存雪崩</h1><p>由于缓存层承载着大量请求，有效地保护了存储层，但是如果缓存层由于某些原因不可用或者大量缓存由于超时时间相同在同一时间段失效，大量请求直接到达存储层，存储层压力过大导致系统雪崩。</p>
+<p><img src="/images/Redis/缓存雪崩.jpg" alt="缓存雪崩"></p>
+<h2 id="解决方案-1"><a href="#解决方案-1" class="headerlink" title="解决方案"></a>解决方案</h2><ul>
+<li>可以把缓存层设计成高可用的，即使个别节点、个别机器、甚至是机房宕掉，依然可以提供服务。利用sentinel或cluster实现。</li>
+<li>采用多级缓存，本地进程作为一级缓存，redis作为二级缓存，不同级别的缓存设置的超时时间不同，即使某级缓存过期了，也有其他级别缓存兜底。</li>
+<li>缓存的过期时间用随机值，尽量让不同的key的过期时间不同。</li>
+</ul>
+<h1 id="缓存击穿"><a href="#缓存击穿" class="headerlink" title="缓存击穿"></a>缓存击穿</h1><p>系统中存在以下两个问题时需要引起注意：</p>
+<ul>
+<li>当前key是一个热点key（例如一个秒杀活动），并发量非常大。</li>
+<li>重建缓存不能在短时间完成，可能是一个复杂计算，例如复杂的SQL、多次IO、多个依赖等。</li>
+</ul>
+<p>在缓存失效的瞬间，有大量线程来重建缓存，造成后端负载加大，甚至可能会让应用崩溃。</p>
+<h2 id="解决方案："><a href="#解决方案：" class="headerlink" title="解决方案："></a>解决方案：</h2><h3 id="分布式互斥锁"><a href="#分布式互斥锁" class="headerlink" title="分布式互斥锁"></a>分布式互斥锁</h3><p>只允许一个线程重建缓存，其他线程等待重建缓存的线程执行完，重新从缓存获取数据即可。<code>set(key,value,timeout)</code>方法。</p>
+<p><img src="/images/Redis/缓存击穿_分布式互斥锁.jpg" alt="缓存击穿_分布式互斥锁"></p>
+<h3 id="永不过期"><a href="#永不过期" class="headerlink" title="永不过期"></a>永不过期</h3><ul>
+<li>从缓存层面来看，确实没有设置过期时间，所以不会出现热点key过期后产生的问题，也就是“物理”不过期。</li>
+<li>从功能层面来看，为每个value设置一个逻辑过期时间，当发现超过逻辑过期时间后，会使用单独的线程去更新缓存。</li>
+</ul>
+<p><img src="/images/Redis/缓存击穿_永不过期.jpg" alt="缓存击穿_永不过期"></p>
+<h2 id="方案对比-1"><a href="#方案对比-1" class="headerlink" title="方案对比"></a>方案对比</h2><ul>
+<li><strong>分布式互斥锁</strong>：这种方案思路比较简单，但是存在一定的隐患，如果构建缓存过程出现问题或者时间较长，可能会存在死锁和线程池阻塞的风险，但是这种方法能够较好地降低后端存储负载，并在一致性上做得比较好。</li>
+<li><strong>永不过期</strong>：这种方案由于没有设置真正的过期时间，实际上已经不存在热点key产生的一系列危害，但是会存在数据不一致的情况，同时代码复杂度会增大。</li>
+</ul>
+
+      
+    </div>
+    
+    
+    
+
+    
+
+    
+
+    
+
+    <footer class="post-footer">
+      
+
+      
+      
+      
+
+      
+        <div class="post-nav">
+          <div class="post-nav-next post-nav-item">
+            
+              <a href="/2020/06/22/Redis/Redis集群/" rel="next" title="Redis集群">
+                <i class="fa fa-chevron-left"></i> Redis集群
+              </a>
+            
+          </div>
+
+          <span class="post-nav-divider"></span>
+
+          <div class="post-nav-prev post-nav-item">
+            
+          </div>
+        </div>
+      
+
+      
+      
+    </footer>
+  </div>
+  
+  
+  
+  </article>
+
+
+
+    <div class="post-spread">
+      
+    </div>
+  </div>
+
+
+          </div>
+          
+
+
+          
+
+  
+
+
+
+        </div>
+        
+          
+  
+  <div class="sidebar-toggle">
+    <div class="sidebar-toggle-line-wrap">
+      <span class="sidebar-toggle-line sidebar-toggle-line-first"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-middle"></span>
+      <span class="sidebar-toggle-line sidebar-toggle-line-last"></span>
+    </div>
+  </div>
+
+  <aside id="sidebar" class="sidebar">
+    
+    <div class="sidebar-inner">
+
+      
+
+      
+        <ul class="sidebar-nav motion-element">
+          <li class="sidebar-nav-toc sidebar-nav-active" data-target="post-toc-wrap">
+            文章目录
+          </li>
+          <li class="sidebar-nav-overview" data-target="site-overview-wrap">
+            站点概览
+          </li>
+        </ul>
+      
+
+      <section class="site-overview-wrap sidebar-panel">
+        <div class="site-overview">
+          <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+            
+              <img class="site-author-image" itemprop="image" src="/images/avatar.jpg" alt="Yuting">
+            
+              <p class="site-author-name" itemprop="name">Yuting</p>
+              <p class="site-description motion-element" itemprop="description"></p>
+          </div>
+
+          <nav class="site-state motion-element">
+
+            
+              <div class="site-state-item site-state-posts">
+              
+                <a href="/archives/">
+              
+                  <span class="site-state-item-count">9</span>
+                  <span class="site-state-item-name">日志</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-categories">
+                <a href="/categories/index.html">
+                  <span class="site-state-item-count">2</span>
+                  <span class="site-state-item-name">分类</span>
+                </a>
+              </div>
+            
+
+            
+              
+              
+              <div class="site-state-item site-state-tags">
+                <a href="/tags/index.html">
+                  <span class="site-state-item-count">1</span>
+                  <span class="site-state-item-name">标签</span>
+                </a>
+              </div>
+            
+
+          </nav>
+
+          
+
+          
+
+          
+          
+
+          
+          
+
+          
+
+        </div>
+      </section>
+
+      
+      <!--noindex-->
+        <section class="post-toc-wrap motion-element sidebar-panel sidebar-panel-active">
+          <div class="post-toc">
+
+            
+              
+            
+
+            
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存的收益与成本"><span class="nav-number">1.</span> <span class="nav-text">缓存的收益与成本</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存更新策略"><span class="nav-number">2.</span> <span class="nav-text">缓存更新策略</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#内存溢出淘汰策略"><span class="nav-number">2.1.</span> <span class="nav-text">内存溢出淘汰策略</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#过期删除"><span class="nav-number">2.2.</span> <span class="nav-text">过期删除</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#惰性删除"><span class="nav-number">2.2.1.</span> <span class="nav-text">惰性删除</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#定时删除"><span class="nav-number">2.2.2.</span> <span class="nav-text">定时删除</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#应用方更新"><span class="nav-number">2.3.</span> <span class="nav-text">应用方更新</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存粒度"><span class="nav-number">3.</span> <span class="nav-text">缓存粒度</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存穿透"><span class="nav-number">4.</span> <span class="nav-text">缓存穿透</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#解决方案"><span class="nav-number">4.1.</span> <span class="nav-text">解决方案</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#缓存空对象"><span class="nav-number">4.1.1.</span> <span class="nav-text">缓存空对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#布隆过滤器拦截"><span class="nav-number">4.1.2.</span> <span class="nav-text">布隆过滤器拦截</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#方案对比"><span class="nav-number">4.2.</span> <span class="nav-text">方案对比</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存雪崩"><span class="nav-number">5.</span> <span class="nav-text">缓存雪崩</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#解决方案-1"><span class="nav-number">5.1.</span> <span class="nav-text">解决方案</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#缓存击穿"><span class="nav-number">6.</span> <span class="nav-text">缓存击穿</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#解决方案："><span class="nav-number">6.1.</span> <span class="nav-text">解决方案：</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#分布式互斥锁"><span class="nav-number">6.1.1.</span> <span class="nav-text">分布式互斥锁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#永不过期"><span class="nav-number">6.1.2.</span> <span class="nav-text">永不过期</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#方案对比-1"><span class="nav-number">6.2.</span> <span class="nav-text">方案对比</span></a></li></ol></li></ol></div>
+            
+
+          </div>
+        </section>
+      <!--/noindex-->
+      
+
+      
+
+    </div>
+  </aside>
+
+
+        
+      </div>
+    </main>
+
+    <footer id="footer" class="footer">
+      <div class="footer-inner">
+        <div class="copyright">&copy; <span itemprop="copyrightYear">2020</span>
+  <span class="with-love">
+    <i class="fa fa-user"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Yuting</span>
+
+  
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-area-chart"></i>
+    </span>
+    
+      <span class="post-meta-item-text">Site words total count&#58;</span>
+    
+    <span title="Site words total count">28.4k</span>
+  
+</div>
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+        
+      </div>
+    </footer>
+
+    
+      <div class="back-to-top">
+        <i class="fa fa-arrow-up"></i>
+        
+      </div>
+    
+
+    
+
+  </div>
+
+  
+
+<script type="text/javascript">
+  if (Object.prototype.toString.call(window.Promise) !== '[object Function]') {
+    window.Promise = null;
+  }
+</script>
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery/index.js?v=2.1.3"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fastclick/lib/fastclick.min.js?v=1.0.6"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/jquery_lazyload/jquery.lazyload.js?v=1.9.7"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/velocity/velocity.ui.min.js?v=1.2.1"></script>
+  
+
+  
+  
+    <script type="text/javascript" src="/lib/fancybox/source/jquery.fancybox.pack.js?v=2.1.5"></script>
+  
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/utils.js?v=5.1.4"></script>
+
+  <script type="text/javascript" src="/js/src/motion.js?v=5.1.4"></script>
+
+
+
+  
+  
+
+  
+  <script type="text/javascript" src="/js/src/scrollspy.js?v=5.1.4"></script>
+<script type="text/javascript" src="/js/src/post-details.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  <script type="text/javascript" src="/js/src/bootstrap.js?v=5.1.4"></script>
+
+
+
+  
+
+
+  
+
+
+
+
+	
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+  
+
+  
+
+  
+  
+
+  
+
+  
+
+  
+
+</body>
+</html>
